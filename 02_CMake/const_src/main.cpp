@@ -15,8 +15,6 @@
 #include <chrono>
 using namespace std::chrono;
 
-#define TEST_LEN 301
-static float testRes[TEST_LEN*3];
 // Function Declarations
 static void argInit_1x16_real32_T(float result[16]);
 
@@ -69,31 +67,26 @@ static float main_model31_func(float *fv, float *out)
 //
 int main(int, char **)
 {
-  std::random_device rd{};
-  std::mt19937 gen{rd()};
   std::ofstream myfile;
-
-  // values near the mean are the most likely
-  // standard deviation affects the dispersion of generated values from the mean
-  std::normal_distribution<> d{1,2};
 
   // The initialize function is being called automatically from your entry-point
   // function. So, a call to initialize is not included here. Invoke the
   // entry-point functions.
   // You can call entry-point functions multiple times.
-  float out_[3]={0, 0, 0};
-  float fv[16]={3.0, 3.1, 1.2, 1.4, 1.0, 1.1, 1.2, 1.4, 1.0, 1.1, 1.2, 1.4, 1.0, 1.1, 1.2, 3.4};
+  float out_[3]={0};
+  float fv[16];
   auto start = high_resolution_clock::now();
   int cntr = 0;
-  for (int vecNum=0; vecNum<TEST_LEN;vecNum++){
-    // std::cout << "fv= [";    
+
+  int lenRec = (sizeof(inVec)/sizeof(*inVec)/16);
+  float *testRes = new float[lenRec*3];
+  std::cout << "Length of array = " << lenRec << std::endl;
+
+  for (int vecNum=0; vecNum<lenRec;vecNum++){
     for (int i=0; i<16 ; i++){
       fv[i] = inVec[vecNum*16+i];
-      // std::cout << fv[i] << ", ";
     }
-    // std::cout << "]" << std::endl;
 
-    // std::cout << "out = [" << out_[0] << "," << out_[1] << "," << out_[2] << "]" << std::endl;
     main_model31_func(fv, out_);
     cntr++;
     
@@ -111,16 +104,13 @@ int main(int, char **)
   std::cout << "writing UT restults to file" << std::endl;
 
   myfile.open ("outUnitTest.txt");
-  for (int jj=0; jj<TEST_LEN; jj++){
+  for (int jj=0; jj<lenRec; jj++){
     myfile  << testRes[jj*3] << "," << testRes[jj*3+1] << "," << testRes[jj*3+2] << std::endl;
   }
-
-  // TO get the value of duration use the count()
-  // member function on the duration object
-  // std::cout << duration.count() << " [usec]" << std::endl;
   
   // Terminate the application.
   // You do not need to do this more than one time.
+  delete[] testRes;
   model31_func_terminate();
   myfile.close();
   return 0;
