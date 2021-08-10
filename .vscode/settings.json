@@ -1,4 +1,5 @@
 {
+    ""
     "files.associations": {
         "fstream": "cpp",
         "cctype": "cpp",
