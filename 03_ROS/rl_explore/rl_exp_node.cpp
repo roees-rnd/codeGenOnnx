@@ -6,6 +6,8 @@ using namespace geometry_msgs;
 #include "model31_func.h"
 #include "model31_func_terminate.h"
 #include <ros/console.h>
+#include "visualization_msgs/Marker.h"
+using namespace visualization_msgs;
 
 // Include Files
 #include <stdint.h>
@@ -24,8 +26,17 @@ ros::Publisher *pubPntr;
 static float rngs[16];
 static bool initDone = false;
 ros::Publisher* rl_pub_ptr=NULL;
+ros::Publisher* rl_pub_mrkr_ptr=NULL;
+Marker* V_ptr;
 
 #define MIN_DIST 0.08f
+// #define PROC_EVERY_LS
+// #define PRINT2CONSL
+
+
+void infere_ls();
+void infere_ls_timer(const ros::TimerEvent& e);
+void ls_callback(const LaserScan::ConstPtr& msg);
 
 // Function Definitions
 //
@@ -67,7 +78,9 @@ static float main_model31_func(float const *fv, float *out)
 
 void ls_callback(const LaserScan::ConstPtr &msg)
 {   
+#ifdef PRINT2CONSL
     ROS_INFO("Got Laser Scan");
+#endif
 
     if (mtx.try_lock()){
       for (int i=0; i<16; i++){
@@ -76,30 +89,77 @@ void ls_callback(const LaserScan::ConstPtr &msg)
       mtx.unlock();
       initDone = true;
     }
+#ifdef PROC_EVERY_LS
+    infere_ls();
+#endif
     return;
 }
 
-void infere_ls(const ros::TimerEvent& e)
+void class2cmd(float* clss, float* cmd)
 {
-    float out_[3]={0};
-    Vector3 V;
-    ROS_INFO("*  Infering");
+  // def category_to_velocity(self, action :int):
 
+  //   # action must be max total_bins
+  //   if action==0:
+  //       x = self.x/2
+  //       y = -self.y
+  //   elif action==1:
+  //       x = self.x
+  //       y = 0
+  //   else:
+  //       x = self.x/2
+  //       y = self.y
+
+  //   return x, y
+
+  cmd[2] = 0.0f;
+  if (clss[0]>clss[1] && clss[0]>clss[2]){
+    // action == 0
+    cmd[0] = 0.5f;
+    cmd[1] = -0.5f;
+  }else if (clss[1]>clss[0] && clss[1]>clss[2]){
+    // action == 1
+    cmd[0] = 1.0f;
+    cmd[1] = 0.0f;
+  }else{
+    cmd[0] = 0.5f;
+    cmd[1] = 0.5f;
+  }
+}
+
+void infere_ls(){
+    float out_[3]={0};
+    float cmd[3];
+    Vector3 V;
+#ifdef PRINT2CONSL
+    ROS_INFO("*  Infering");
+#endif
     if (initDone){
       mtx.lock();
       main_model31_func(rngs, out_);
       mtx.unlock();
     }
     
+    class2cmd(out_, cmd);
+
     V.x=out_[0];
     V.y=out_[1];
     V.z=out_[2];
 
     rl_pub_ptr->publish(V);
-
+    V_ptr->points[1].x = cmd[0];
+    V_ptr->points[1].y = cmd[1];
+    rl_pub_mrkr_ptr->publish(*V_ptr);
+#ifdef PRINT2CONSL
     ROS_INFO("*  Infering and publishing done");
-
+#endif
     return;
+}
+
+void infere_ls_timer(const ros::TimerEvent& e)
+{
+  infere_ls();
+  return;
 }
 /**
  * This tutorial demonstrates simple sending of messages over the ROS system.
@@ -117,7 +177,9 @@ int main(int argc, char **argv)
    * part of the ROS system.
    */
   ros::init(argc, argv, "rl_explore");
+#ifdef PRINT2CONSL
   ROS_INFO("Node initialized");
+#endif
   /**
    * NodeHandle is the main access point to communications with the ROS system.
    * The first NodeHandle constructed will fully initialize this node, and the last
@@ -142,15 +204,40 @@ int main(int argc, char **argv)
    * than we can send them, the number here specifies how many messages to
    * buffer up before throwing some away.
    */
+  
+#ifdef PRINT2CONSL
   ROS_INFO("Pre subscribe");
+#endif
+  Marker V;
+  V_ptr = &V;
+  Point p0, p1;
+  V.type = Marker::ARROW;
+  V.action = Marker::MODIFY;
+  V.header.frame_id = "mr18_frame";
+  V.scale.x = 0.18;
+  V.scale.y = 0.36;
+  V.scale.z = 0;
+  V.color.b = 0.7;
+  V.color.a = 0.9;
+  V.color.g = 0.3;
+  V.color.r = 0.8;
+  p0.x = 0;p1.x = 1;
+  p0.y = 0;p1.y = 0;
+  p0.z = 0;p1.z = 0;
+  V.points.push_back(p0);
+  V.points.push_back(p1);
 
-  ros::Subscriber sub = n.subscribe("/fa_node/mr18", 10, ls_callback);
-   
   ros::Publisher rl_pub = n.advertise<Vector3>("/rl_out", 10);
   rl_pub_ptr = &rl_pub;
+  ros::Duration(1.0).sleep();
 
-  ros::Timer timer = n.createTimer(ros::Duration(0.3), infere_ls);
+  ros::Publisher rl_pub_mrkr = n.advertise<Marker>("/rl_out_mrkr", 10);
+  rl_pub_mrkr_ptr = &rl_pub_mrkr;
 
+  ros::Subscriber sub = n.subscribe("/fa_node/mr18", 10, ls_callback);
+#ifndef PROC_EVERY_LS
+  ros::Timer timer = n.createTimer(ros::Duration(0.3), infere_ls_timer);
+#endif
 
   ros::spin();
 
