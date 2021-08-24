@@ -4,6 +4,7 @@
 #include "model31_func.h"
 #include "model31_func_terminate.h"
 #include "unitTest.h"
+#include "unitTest_out.h"
 
 #include <iomanip>
 #include <string>
@@ -102,11 +103,18 @@ int main(int, char **)
   std::cout << (float)cntr/((float)duration.count()*0.000001) << " [Hz]" << std::endl;
 
   std::cout << "writing UT restults to file" << std::endl;
-
+  float err;
+  int numErr = 0;
   myfile.open ("outUnitTest.txt");
   for (int jj=0; jj<lenRec; jj++){
     myfile  << testRes[jj*3] << "," << testRes[jj*3+1] << "," << testRes[jj*3+2] << std::endl;
+    err=std::abs(testRes[jj*3]-outVec[jj*3])+std::abs(testRes[jj*3+1]-outVec[jj*3+1])+std::abs(testRes[jj*3+2]-outVec[jj*3+2]);
+    if (err>0.01){
+      numErr++;
+      std::cout << "line #" << jj << ", error = " << err << std::endl;
+    }
   }
+  std::cout << "Number of unit test errors = " << numErr << " out of " << lenRec << std::endl;
   
   // Terminate the application.
   // You do not need to do this more than one time.

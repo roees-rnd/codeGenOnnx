@@ -8,7 +8,21 @@ with open('model31.pkl', 'wb') as fid:
     pickle.dump(state, fid)
 
 ```
+### Saving unit-test vectors
+While running the progran insret the following snippet where the prediction is called:
+```python
+f_ut = open('unitTest_pytorch.csv','a')
+...
 
+def predict(self, state):
+    actions_prob = super().predict(state)
+    selected_action = nn.functional.softmax(actions_prob, dim=-1).multinomial(num_samples=1).item()
+    # import pdb;pdb.set_trace()
+    f_ut.write(','.join([str(x.item()) for x in state[0]])+','+','.join([str(x.item()) for x in nn.functional.softmax(actions_prob, dim=-1)])+'\n')
+    f_ut.flush()
+    return selected_action, actions_prob
+
+```
 
 ### Converting torch pickeled module to onnx:
 ```python

@@ -95,3 +95,8 @@ arm_model31_func_cpp/
 arm_compute/
 trash/
 src/
+*.asv
+01_Matlab/unitTest_outErr.csv
+01_Matlab/unitTest.h
+01_Matlab/unitTest_out.h
+01_Matlab/unitTest_pytorch.csv
