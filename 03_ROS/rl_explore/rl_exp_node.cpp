@@ -17,26 +17,28 @@ using namespace visualization_msgs;
 #include <stdint.h>
 
 #include <sstream>
-#include <mutex>          // std::mutex
-std::mutex mtx;           // mutex for critical section
+#include <mutex> // std::mutex
+std::mutex mtx;  // mutex for critical section
 
 LaserScan msg_new;
 ros::Publisher *pubPntr;
 
 static float rngs[16];
-static bool initDone = false;
-ros::Publisher* rl_pub_ptr=NULL;
-ros::Publisher* rl_pub_mrkr_ptr=NULL;
-Marker* V_ptr;
-
+static float rngs_tmp[16]={0};
+static bool initDone = true;
+ros::Publisher *rl_pub_ptr = NULL;
+ros::Publisher *rl_pub_mrkr_ptr = NULL;
+ros::Publisher *rl_proc_ls_ptr = NULL;
+Marker *V_ptr;
+LaserScan *rl_ls_ptr;
+static uint32_t nsec = 0;
+// static int ord[] = {8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7};
 #define MIN_DIST 0.08f
-// #define PROC_EVERY_LS
 // #define PRINT2CONSL
 
-
 void infere_ls();
-void infere_ls_timer(const ros::TimerEvent& e);
-void ls_callback(const LaserScan::ConstPtr& msg);
+void infere_ls_timer(const ros::TimerEvent &e);
+void ls_callback(const LaserScan::ConstPtr &msg);
 
 // Function Definitions
 //
@@ -46,7 +48,8 @@ void ls_callback(const LaserScan::ConstPtr& msg);
 static void argInit_1x16_real32_T(float result[16])
 {
   // Loop over the array to initialize each element.
-  for (int idx1{0}; idx1 < 16; idx1++) {
+  for (int idx1{0}; idx1 < 16; idx1++)
+  {
     // Set the value of the array element.
     // Change this value to the value that the application requires.
     result[idx1] = (float)result[idx1]; // argInit_real32_T();
@@ -77,25 +80,24 @@ static float main_model31_func(float const *fv, float *out)
 }
 
 void ls_callback(const LaserScan::ConstPtr &msg)
-{   
+{
 #ifdef PRINT2CONSL
-    ROS_INFO("Got Laser Scan");
+  ROS_INFO("Got Laser Scan");
 #endif
-
-    if (mtx.try_lock()){
-      for (int i=0; i<16; i++){
-        rngs[i] = msg->ranges[i]<MIN_DIST?msg->ranges[i]:5.0f;
-      }
-      mtx.unlock();
-      initDone = true;
+  float r_tmp;
+  if(mtx.try_lock()){
+    for (int i = 0; i < 16; i++)
+    {
+      r_tmp = msg->ranges[i];
+      rngs_tmp[i] = r_tmp>0.0001f?r_tmp:rngs_tmp[i];  // check LS communication validity
+      rngs[i] = rngs_tmp[i] > MIN_DIST ? rngs_tmp[i] : 3.999f;  // check LS physical validity
     }
-#ifdef PROC_EVERY_LS
-    infere_ls();
-#endif
-    return;
+    mtx.unlock();
+  }
+  return;
 }
 
-void class2cmd(float* clss, float* cmd)
+void class2cmd(float *clss, float *cmd)
 {
   // def category_to_velocity(self, action :int):
 
@@ -113,50 +115,61 @@ void class2cmd(float* clss, float* cmd)
   //   return x, y
 
   cmd[2] = 0.0f;
-  if (clss[0]>clss[1] && clss[0]>clss[2]){
+  if (clss[0] > clss[1] && clss[0] > clss[2])
+  {
     // action == 0
     cmd[0] = 0.5f;
     cmd[1] = -0.5f;
-  }else if (clss[1]>clss[0] && clss[1]>clss[2]){
+  }
+  else if (clss[1] > clss[0] && clss[1] > clss[2])
+  {
     // action == 1
     cmd[0] = 1.0f;
     cmd[1] = 0.0f;
-  }else{
+  }
+  else
+  {
     cmd[0] = 0.5f;
     cmd[1] = 0.5f;
   }
 }
 
-void infere_ls(){
-    float out_[3]={0};
-    float cmd[3];
-    Vector3 V;
+void infere_ls()
+{
+  float out_[3] = {0};
+  float cmd[3];
+  Vector3 V;
 #ifdef PRINT2CONSL
-    ROS_INFO("*  Infering");
+  ROS_INFO("*  Infering");
 #endif
-    if (initDone){
-      mtx.lock();
-      main_model31_func(rngs, out_);
-      mtx.unlock();
-    }
-    
-    class2cmd(out_, cmd);
+  if (initDone)
+  {
+    mtx.lock();
+    main_model31_func(rngs, out_);
+    mtx.unlock();
+    // ROS_INFO("modle out = %f, %f, %f\n", out_[0], out_[1], out_[2]);
+  }
 
-    V.x=out_[0];
-    V.y=out_[1];
-    V.z=out_[2];
+  class2cmd(out_, cmd);
+  V.x = out_[0];
+  V.y = out_[1];
+  V.z = out_[2];
 
-    rl_pub_ptr->publish(V);
-    V_ptr->points[1].x = cmd[0];
-    V_ptr->points[1].y = cmd[1];
-    rl_pub_mrkr_ptr->publish(*V_ptr);
+  rl_pub_ptr->publish(V);  // publish raw classifier output
+  V_ptr->points[1].x = cmd[0];
+  V_ptr->points[1].y = cmd[1];
+  rl_pub_mrkr_ptr->publish(*V_ptr);  // publish command converted from raw
+  for (int i=0; i<16; i++){
+    rl_ls_ptr->ranges[i]=rngs[i];
+  }
+  rl_proc_ls_ptr->publish(*rl_ls_ptr);
 #ifdef PRINT2CONSL
-    ROS_INFO("*  Infering and publishing done");
+  ROS_INFO("*  Infering and publishing done");
 #endif
-    return;
+  return;
 }
 
-void infere_ls_timer(const ros::TimerEvent& e)
+void infere_ls_timer(const ros::TimerEvent &e)
 {
   infere_ls();
   return;
@@ -204,7 +217,7 @@ int main(int argc, char **argv)
    * than we can send them, the number here specifies how many messages to
    * buffer up before throwing some away.
    */
-  
+
 #ifdef PRINT2CONSL
   ROS_INFO("Pre subscribe");
 #endif
@@ -221,26 +234,39 @@ int main(int argc, char **argv)
   V.color.a = 0.9;
   V.color.g = 0.3;
   V.color.r = 0.8;
-  p0.x = 0;p1.x = 1;
-  p0.y = 0;p1.y = 0;
-  p0.z = 0;p1.z = 0;
+  p0.x = 0;
+  p1.x = 1;
+  p0.y = 0;
+  p1.y = 0;
+  p0.z = 0;
+  p1.z = 0;
   V.points.push_back(p0);
   V.points.push_back(p1);
 
+  LaserScan rl_ls;
+  rl_ls_ptr = &rl_ls;
+  rl_ls.header.frame_id  = "mr18_frame";
+  rl_ls.angle_min = 0;
+  rl_ls.angle_max = 5.8905;
+  rl_ls.angle_increment = 0.392699092627;
+  rl_ls.range_min = 0.0500000007451;
+  rl_ls.range_max = 4.0;
+  for (int i=0; i<16; i++){
+    rl_ls.ranges.push_back(0.0f);
+  }
   ros::Publisher rl_pub = n.advertise<Vector3>("/rl_out", 10);
   rl_pub_ptr = &rl_pub;
   ros::Duration(1.0).sleep();
 
   ros::Publisher rl_pub_mrkr = n.advertise<Marker>("/rl_out_mrkr", 10);
   rl_pub_mrkr_ptr = &rl_pub_mrkr;
+  ros::Publisher rl_proc_ls = n.advertise<LaserScan>("/rl_proc_ls", 10);
+  rl_proc_ls_ptr = &rl_proc_ls;
 
   ros::Subscriber sub = n.subscribe("/fa_node/mr18", 10, ls_callback);
-#ifndef PROC_EVERY_LS
   ros::Timer timer = n.createTimer(ros::Duration(0.3), infere_ls_timer);
-#endif
 
   ros::spin();
-
 
   return 0;
 }
