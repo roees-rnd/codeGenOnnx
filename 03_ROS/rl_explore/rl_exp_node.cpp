@@ -147,17 +147,32 @@ void infere_ls()
     mtx.lock();
     main_model31_func(rngs, out_);
     mtx.unlock();
-    // ROS_INFO("modle out = %f, %f, %f\n", out_[0], out_[1], out_[2]);
+#ifdef PRINT2CONSL
+    ROS_INFO("modle out = %f, %f, %f\n", out_[0], out_[1], out_[2]);
+#endif
+
+    // 
   }
 
   class2cmd(out_, cmd);
-  V.x = out_[0];
-  V.y = out_[1];
-  V.z = out_[2];
-
-  rl_pub_ptr->publish(V);  // publish raw classifier output
+  V.x = cmd[0];
+  V.y = cmd[1];
+  
   V_ptr->points[1].x = cmd[0];
   V_ptr->points[1].y = cmd[1];
+  V_ptr->points[1].z = 0.0f;
+  // Use point at 'z' coordinate for rotation command:
+  if (cmd[1]>0.0f){
+    V.z = 1.0f;
+  }else if (cmd[1]<0.0f)
+  {
+    V.z = -1.0f;
+  }else{
+    V.z = 0.0f;
+  }
+  rl_pub_ptr->publish(V);  // publish raw classifier output
+
+  
   rl_pub_mrkr_ptr->publish(*V_ptr);  // publish command converted from raw
   for (int i=0; i<16; i++){
     rl_ls_ptr->ranges[i]=rngs[i];
